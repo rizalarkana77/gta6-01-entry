@@ -1,88 +1,97 @@
-// Deterministic screenshot scenes: ?shot=start|play|chase|mission renders one
-// exact state from a fixed seed, with no wall-clock randomness, so the
-// screenshots are reproducible and the judge sees the real game.
-import { createWorld } from './world.js';
+// SOLMAR HEAT — frozen screenshot scenes for ?shot=.
+// Each scene puts the world into one exact, deterministic state so the
+// screenshots in screenshots/ are reproducible from ?seed= alone.
 
-export function setupShot(world, shot) {
-  // world is already created from the URL seed; arrange it per shot.
+import { roadCentre, CAR_MAX_SPEED } from './config.js';
+import { PLACES } from './world.js';
+
+// A car the player is already driving, placed on a downtown road.
+function putPlayerInCar(world, x, y, angle, speed) {
+  const car = world.parked[0];
+  car.x = x;
+  car.y = y;
+  car.angle = angle;
+  car.speed = speed;
+  world.player.car = car;
+  world.player.x = x;
+  world.player.y = y;
+  world.player.angle = angle;
+}
+
+export function applyShot(world, name) {
   const p = world.player;
-  if (shot === 'play') {
-    // Mid-drive downtown: in a car, traffic around, mission 1 active.
-    const car = world.cars.find((c) => c.kind === 'parked');
-    if (car) {
-      p.inCar = car;
-      p.onFoot = false;
-      car.kind = 'player';
-      car.x = world.city.roadsX[4];
-      car.y = world.city.roadsY[4];
-      car.angle = 0;
-      car.speed = 240;
-      p.x = car.x;
-      p.y = car.y;
-      p.angle = 0;
+  switch (name) {
+    case 'start':
+      world.state = 'title';
+      break;
+    case 'play': {
+      world.state = 'playing';
+      putPlayerInCar(world, roadCentre(4) + 120, roadCentre(4), 0, CAR_MAX_SPEED * 0.6);
+      world.mission.index = 0;
+      world.mission.stage = 'deliver';
+      world.message = 'Package secured — take it to the Pawn Shop';
+      world.messageTimer = 999;
+      break;
     }
-    world.missionIndex = 0;
-    world.stageIndex = 0;
-    world.time = 42;
-  } else if (shot === 'chase') {
-    // Police chase: wanted 3 stars, two cop cars closing in, player driving.
-    const car = world.cars.find((c) => c.kind === 'parked');
-    if (car) {
-      p.inCar = car;
-      p.onFoot = false;
-      car.kind = 'player';
-      car.x = world.city.roadsX[5];
-      car.y = world.city.roadsY[5];
-      car.angle = Math.PI / 2;
-      car.speed = 320;
-      p.x = car.x;
-      p.y = car.y;
-      p.angle = Math.PI / 2;
+    case 'chase': {
+      world.state = 'playing';
+      putPlayerInCar(world, roadCentre(5), roadCentre(3) + 60, Math.PI / 2, CAR_MAX_SPEED * 0.7);
+      world.wanted = 3;
+      world.crimeTimer = 0;
+      // Two cruisers already on the player's tail.
+      for (let i = 0; i < 2; i++) {
+        world.police.push({
+          kind: 'police',
+          x: p.x - 160 - i * 90,
+          y: p.y - 60 + i * 120,
+          angle: 0,
+          speed: 420,
+          hp: 120,
+          color: '#2b4fd8',
+          dead: false,
+        });
+      }
+      world.message = 'The cops are on you!';
+      world.messageTimer = 999;
+      break;
     }
-    world.wanted = 3;
-    world.missionIndex = 1;
-    world.stageIndex = 0;
-    world.time = 130;
-    // Place two police cars right behind the player.
-    const mk = (dx, dy) => {
-      const cop = {
-        kind: 'police', x: p.x + dx, y: p.y + dy, angle: Math.PI / 2,
-        speed: 380, maxSpeed: 480, color: '#2e6fd8', w: 46, h: 22,
-        driver: true, health: 100, stuck: 0,
-      };
-      world.police.push(cop);
-      world.cars.push(cop);
-      return cop;
-    };
-    mk(-90, -70);
-    mk(60, -120);
-    world.message = 'The cops are on you! Run!';
-    world.messageTimer = 99;
-  } else if (shot === 'mission') {
-    // Mission 3 in progress: on foot near a cash bag, wanted 2, bags 2/5.
-    world.missionIndex = 2;
-    world.stageIndex = 0;
-    world.bagsCollected = 2;
-    world.wanted = 2;
-    world.time = 260;
-    // Spawn the bags and stand the player next to one.
-    world.city.bagSpots.forEach((s, i) => {
-      world.pickups.push({ x: s.x, y: s.y, kind: 'bag', amount: 0, taken: i < 2, bagIndex: i });
-    });
-    const bag = world.city.bagSpots[2];
-    p.x = bag.x - 60;
-    p.y = bag.y + 30;
-    p.angle = Math.atan2(bag.y - p.y, bag.x - p.x);
-    world.message = 'Cash bag 3/5 — grab it!';
-    world.messageTimer = 99;
-  } else if (shot === 'end') {
-    // Victory state: debt paid, all missions done.
-    world.missionIndex = 3;
-    world.debtPaid = 50000;
-    p.money = 50000;
-    world.stats.carsStolen = 7;
-    world.stats.shotsFired = 41;
-    world.time = 742;
+    case 'mission': {
+      world.state = 'playing';
+      world.mission.index = 2;
+      world.mission.stage = 'collect';
+      world.mission.bags = [
+        { x: roadCentre(4) + 40, y: roadCentre(4) + 30, taken: true },
+        { x: roadCentre(6), y: roadCentre(2), taken: true },
+        { x: roadCentre(4) + 90, y: roadCentre(4) - 10, taken: false },
+        { x: roadCentre(7), y: roadCentre(6), taken: false },
+        { x: roadCentre(2), y: roadCentre(7), taken: false },
+      ];
+      world.mission.bagsGot = 2;
+      p.x = roadCentre(4) + 40;
+      p.y = roadCentre(4) + 90;
+      p.angle = -Math.PI / 2;
+      p.car = null;
+      world.wanted = 2;
+      world.crimeTimer = 0;
+      world.message = 'Cash bag 3/5';
+      world.messageTimer = 999;
+      break;
+    }
+    case 'end': {
+      world.state = 'won';
+      world.mission.index = 3;
+      world.money = 50000;
+      world.debt = 0;
+      world.debtPaid = 50000;
+      world.stats.missionsDone = 3;
+      world.stats.carsStolen = 4;
+      world.stats.shotsFired = 31;
+      world.stats.pedsDown = 3;
+      world.time = 742;
+      break;
+    }
+    default:
+      world.state = 'title';
+      break;
   }
-  return world;
 }

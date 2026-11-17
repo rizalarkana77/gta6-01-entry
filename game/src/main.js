@@ -1,188 +1,143 @@
-// SOLMAR HEAT — game loop and state machine. Title -> playing -> paused /
-// busted / wasted / won. Owns the canvas, the camera, the save, and the
-// deterministic ?seed= / ?shot= modes the screenshots use.
-import { CONFIG } from './config.js';
-import { createInput } from './input.js';
-import { createAudio } from './audio.js';
-import {
-  createWorld, updateWorld, respawn, saveGame, loadSave, hasSave, applySave,
-  currentMission,
-} from './world.js';
-import { renderWorld, renderHUD, renderTitle, renderPause, renderEnd } from './render.js';
-import { setupShot } from './shots.js';
+// SOLMAR HEAT — browser bootstrap: the loop, the screen state machine,
+// save/load, and the wiring between input, world, audio and rendering.
 
-const C = CONFIG;
+import { SAVE_KEY } from './config.js';
+import { Input } from './input.js';
+import { AudioSys } from './audio.js';
+import { createWorld, stepWorld, serializeWorld, applySave } from './world.js';
+import { draw, cameraFor, VIEW_W, VIEW_H } from './render.js';
+import { applyShot } from './shots.js';
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+canvas.width = VIEW_W;
+canvas.height = VIEW_H;
 
-const params = new URLSearchParams(location.search);
-const seed = Number(params.get('seed') || '1') || 1;
-const shot = params.get('shot') || '';
-const SHOT_MODE = ['start', 'play', 'chase', 'mission', 'end'].includes(shot) ? shot : '';
+const params = new URLSearchParams(window.location.search);
+const seed = Number.parseInt(params.get('seed') ?? '1', 10) || 1;
+const shot = params.get('shot');
 
-const input = createInput(canvas);
-const audio = createAudio();
+const world = createWorld(seed);
+const input = new Input();
+input.attach(canvas);
+const audio = new AudioSys();
 
-let world = createWorld(seed);
-let state = 'title'; // title | playing | paused | busted | wasted | won
-let cam = { x: 0, y: 0 };
-let best = null;
+let hasSave = false;
 try {
-  best = localStorage.getItem('solmar-heat-best');
+  hasSave = Boolean(window.localStorage.getItem(SAVE_KEY));
 } catch {
-  best = null;
+  hasSave = false;
 }
 
-if (SHOT_MODE) {
-  setupShot(world, SHOT_MODE);
-  state = SHOT_MODE === 'start' ? 'title' : SHOT_MODE === 'end' ? 'won' : 'playing';
-  if (SHOT_MODE === 'end') state = 'won';
-  // Snap the camera to the player at once: a screenshot frame must be
-  // composed on the first paint, not after the follow lerp converges.
-  cam.x = Math.max(-80, Math.min(world.city.w - C.viewW + 80, world.player.x - C.viewW / 2));
-  cam.y = Math.max(-80, Math.min(world.city.h - C.viewH + 80, world.player.y - C.viewH / 2));
-}
+if (shot) applyShot(world, shot);
 
-// Camera follows the player, clamped to the world.
-function updateCamera() {
-  const p = world.player;
-  const tx = p.x - C.viewW / 2;
-  const ty = p.y - C.viewH / 2;
-  cam.x += (tx - cam.x) * 0.12;
-  cam.y += (ty - cam.y) * 0.12;
-  cam.x = Math.max(-80, Math.min(world.city.w - C.viewW + 80, cam.x));
-  cam.y = Math.max(-80, Math.min(world.city.h - C.viewH + 80, cam.y));
-  // Screen shake.
-  if (world.shake > 0) {
-    cam.x += (Math.random() - 0.5) * world.shake;
-    cam.y += (Math.random() - 0.5) * world.shake;
+function saveGame() {
+  try {
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld(world)));
+    hasSave = true;
+    world.message = 'Game saved';
+    world.messageTimer = 2.5;
+  } catch {
+    world.message = 'Could not save';
+    world.messageTimer = 2.5;
   }
 }
 
-function startGame(fromSave) {
-  world = createWorld(seed);
-  if (fromSave) {
-    const save = loadSave();
-    if (save) applySave(world, save);
-  }
-  cam.x = world.player.x - C.viewW / 2;
-  cam.y = world.player.y - C.viewH / 2;
-  state = 'playing';
-  audio.unlock();
-}
-
-function endRun(kind) {
-  state = kind;
-  if (kind === 'won') {
-    const summary = 'Debt paid in ' + Math.floor(world.time / 60) + 'm ' + Math.floor(world.time % 60) + 's';
-    try {
-      localStorage.setItem('solmar-heat-best', summary);
-      best = summary;
-    } catch {
-      // storage unavailable; best score is best-effort only
+function loadGame() {
+  try {
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (data.seed !== world.seed) {
+      // A save from another seed still loads: rebuild the world on its seed.
+      const fresh = createWorld(data.seed);
+      const ok = applySave(fresh, data);
+      if (!ok) return false;
+      Object.assign(world, fresh);
+      world.rng = fresh.rng;
+    } else {
+      if (!applySave(world, data)) return false;
     }
-    audio.cash();
-  } else if (kind === 'busted') {
-    audio.busted();
-  } else {
-    audio.fail();
+    return true;
+  } catch {
+    return false;
   }
 }
+
+function startGame(continueSave) {
+  audio.ensure();
+  audio.startMusic();
+  if (continueSave && loadGame()) {
+    world.state = 'playing';
+    return;
+  }
+  // A fresh run starts from the seed's opening state.
+  const fresh = createWorld(seed);
+  Object.assign(world, fresh);
+  world.rng = fresh.rng;
+  world.state = 'playing';
+}
+
+function drainEvents() {
+  for (const event of world.events) audio.play(event.type);
+  world.events.length = 0;
+}
+
+let last = performance.now();
+let mutePressed = false;
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - (frame.last || now)) / 1000 || 0.016);
-  frame.last = now;
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
 
-  // Mouse world position for aiming.
-  input.mouse.worldX = input.mouse.x + cam.x;
-  input.mouse.worldY = input.mouse.y + cam.y;
+  const snap = input.snapshot();
+  const pressed = snap.pressed;
 
-  if (state === 'title') {
-    if (SHOT_MODE !== 'start') {
-      if (input.wasPressed('Enter', 'NumpadEnter') || input.wasClicked()) {
-        audio.unlock();
-        startGame(false);
-      } else if (input.wasPressed('KeyN')) {
-        audio.unlock();
-        startGame(false);
-      }
-      // Continue from save with Enter when a save exists: prefer Continue.
-      if (input.wasPressed('Enter', 'NumpadEnter') && hasSave()) {
-        // handled above as a fresh start; a save is loaded by pressing C
-      }
-      if (input.wasPressed('KeyC') && hasSave()) {
-        audio.unlock();
-        startGame(true);
-      }
-    }
-    renderTitle(ctx, C.viewW, C.viewH, hasSave(), best);
-  } else if (state === 'playing') {
-    if (SHOT_MODE) {
-      // Frozen scene for the screenshot: no simulation, just the frame.
-      updateCamera();
-      renderWorld(ctx, world, cam, C.viewW, C.viewH);
-      renderHUD(ctx, world, C.viewW, C.viewH);
-    } else {
-      if (input.wasPressed('KeyP', 'Escape')) {
-        state = 'paused';
-      } else if (input.wasPressed('KeyS')) {
-        if (saveGame(world)) {
-          world.message = 'Game saved.';
-          world.messageTimer = 2;
-        }
-      } else if (input.wasPressed('KeyM')) {
-        audio.toggleMute();
-      } else {
-        const result = updateWorld(world, input, dt, audio);
-        updateCamera();
-        if (result === 'busted' || result === 'wasted') {
-          world.bustedTimer = 0;
-          endRun(result);
-        } else if (result === 'won') {
-          endRun('won');
-        }
-      }
-      renderWorld(ctx, world, cam, C.viewW, C.viewH);
-      renderHUD(ctx, world, C.viewW, C.viewH);
-    }
-  } else if (state === 'paused') {
-    renderWorld(ctx, world, cam, C.viewW, C.viewH);
-    renderHUD(ctx, world, C.viewW, C.viewH);
-    renderPause(ctx, C.viewW, C.viewH);
-    if (input.wasPressed('KeyP', 'Escape')) state = 'playing';
-    else if (input.wasPressed('KeyS')) {
-      if (saveGame(world)) {
-        world.message = 'Game saved.';
-        world.messageTimer = 2;
-      }
-      state = 'playing';
-    } else if (input.wasPressed('KeyR')) {
-      respawn(world);
-      state = 'playing';
-    } else if (input.wasPressed('KeyM')) {
-      audio.toggleMute();
-    } else if (input.wasPressed('KeyQ')) {
-      state = 'title';
-    }
-  } else {
-    // busted / wasted / won.
-    renderWorld(ctx, world, cam, C.viewW, C.viewH);
-    renderHUD(ctx, world, C.viewW, C.viewH);
-    renderEnd(ctx, C.viewW, C.viewH, state, world);
-    if (input.wasPressed('Enter', 'NumpadEnter')) {
-      if (state === 'busted' || state === 'wasted') {
-        respawn(world);
-        state = 'playing';
-      } else {
-        startGame(false);
-      }
-    } else if (input.wasPressed('KeyQ')) {
-      state = 'title';
-    }
+  // M toggles mute from anywhere.
+  if (input.keys.has('KeyM') && !mutePressed) {
+    audio.ensure();
+    audio.setMuted(!audio.muted);
+    mutePressed = true;
+  }
+  if (!input.keys.has('KeyM')) mutePressed = false;
+
+  // Screen state machine; the world only steps while playing.
+  if (world.state === 'title') {
+    if (pressed.has('Enter')) startGame(false);
+    else if (pressed.has('KeyC') && hasSave) startGame(true);
+  } else if (world.state === 'playing') {
+    if (pressed.has('KeyP')) world.state = 'paused';
+    else if (pressed.has('KeyS')) saveGame();
+  } else if (world.state === 'paused') {
+    if (pressed.has('KeyP')) world.state = 'playing';
+    else if (pressed.has('KeyS')) saveGame();
+    else if (pressed.has('KeyT')) world.state = 'title';
+  } else if (world.state === 'busted' || world.state === 'wasted' || world.state === 'won') {
+    if (pressed.has('Enter')) startGame(false);
+    else if (pressed.has('KeyT')) world.state = 'title';
   }
 
-  input.endFrame();
+  if (world.state === 'playing') {
+    // Mouse aim in world coordinates, for the pistol: the canvas is
+    // 1280x720 internally, so canvas pixels map 1:1 onto the view.
+    const cam = cameraFor(world);
+    snap.aimWorld = { x: cam.x + snap.aimX, y: cam.y + snap.aimY };
+    stepWorld(world, snap, dt);
+    drainEvents();
+    audio.setSiren(world.wanted > 0);
+    audio.setEngine(world.player.car ? Math.abs(world.player.car.speed) : 0, 560);
+  } else {
+    audio.setSiren(false);
+    audio.setEngine(0, 560);
+  }
+
+  const cam = cameraFor(world);
+  draw(ctx, world, cam, hasSave);
   requestAnimationFrame(frame);
 }
+
+// First gesture unlocks audio (browsers block it before then).
+window.addEventListener('pointerdown', () => audio.ensure(), { once: true });
+window.addEventListener('keydown', () => audio.ensure(), { once: true });
 
 requestAnimationFrame(frame);
