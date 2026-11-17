@@ -1,97 +1,114 @@
-// SOLMAR HEAT — frozen screenshot scenes for ?shot=.
-// Each scene puts the world into one exact, deterministic state so the
-// screenshots in screenshots/ are reproducible from ?seed= alone.
+// SOLMAR HEAT — frozen screenshot scenes for `?shot=`.
+// Each shot builds a deterministic world from the seed and arranges it so
+// one rendered frame tells the story: title, driving, a police chase, a
+// mission moment, the victory screen.
 
-import { roadCentre, CAR_MAX_SPEED } from './config.js';
-import { PLACES } from './world.js';
+import { createWorld, step, carById, PLACES } from './world.js';
+import { blankInput } from './input.js';
+import { CONFIG } from './config.js';
 
-// A car the player is already driving, placed on a downtown road.
-function putPlayerInCar(world, x, y, angle, speed) {
-  const car = world.parked[0];
-  car.x = x;
-  car.y = y;
-  car.angle = angle;
-  car.speed = speed;
-  world.player.car = car;
-  world.player.x = x;
-  world.player.y = y;
-  world.player.angle = angle;
+function driveSteps(world, n, input) {
+  const inp = input || { ...blankInput(), up: true };
+  for (let i = 0; i < n; i++) step(world, inp, 1 / 60);
 }
 
-export function applyShot(world, name) {
-  const p = world.player;
-  switch (name) {
-    case 'start':
-      world.state = 'title';
-      break;
-    case 'play': {
-      world.state = 'playing';
-      putPlayerInCar(world, roadCentre(4) + 120, roadCentre(4), 0, CAR_MAX_SPEED * 0.6);
-      world.mission.index = 0;
-      world.mission.stage = 'deliver';
-      world.message = 'Package secured — take it to the Pawn Shop';
-      world.messageTimer = 999;
-      break;
-    }
-    case 'chase': {
-      world.state = 'playing';
-      putPlayerInCar(world, roadCentre(5), roadCentre(3) + 60, Math.PI / 2, CAR_MAX_SPEED * 0.7);
-      world.wanted = 3;
-      world.crimeTimer = 0;
-      // Two cruisers already on the player's tail.
-      for (let i = 0; i < 2; i++) {
-        world.police.push({
-          kind: 'police',
-          x: p.x - 160 - i * 90,
-          y: p.y - 60 + i * 120,
-          angle: 0,
-          speed: 420,
-          hp: 120,
-          color: '#2b4fd8',
-          dead: false,
-        });
-      }
-      world.message = 'The cops are on you!';
-      world.messageTimer = 999;
-      break;
-    }
-    case 'mission': {
-      world.state = 'playing';
-      world.mission.index = 2;
-      world.mission.stage = 'collect';
-      world.mission.bags = [
-        { x: roadCentre(4) + 40, y: roadCentre(4) + 30, taken: true },
-        { x: roadCentre(6), y: roadCentre(2), taken: true },
-        { x: roadCentre(4) + 90, y: roadCentre(4) - 10, taken: false },
-        { x: roadCentre(7), y: roadCentre(6), taken: false },
-        { x: roadCentre(2), y: roadCentre(7), taken: false },
-      ];
-      world.mission.bagsGot = 2;
-      p.x = roadCentre(4) + 40;
-      p.y = roadCentre(4) + 90;
-      p.angle = -Math.PI / 2;
-      p.car = null;
-      world.wanted = 2;
-      world.crimeTimer = 0;
-      world.message = 'Cash bag 3/5';
-      world.messageTimer = 999;
-      break;
-    }
-    case 'end': {
-      world.state = 'won';
-      world.mission.index = 3;
-      world.money = 50000;
-      world.debt = 0;
-      world.debtPaid = 50000;
-      world.stats.missionsDone = 3;
-      world.stats.carsStolen = 4;
-      world.stats.shotsFired = 31;
-      world.stats.pedsDown = 3;
-      world.time = 742;
-      break;
-    }
-    default:
-      world.state = 'title';
-      break;
+// Put the player in a car and roll it downtown for a few seconds.
+function putPlayerInCar(world, carKind) {
+  const car = world.cars.find((c) => c.kind === carKind) || world.cars[0];
+  car.speed = 0;
+  world.player.carId = car.id;
+  world.player.x = car.x;
+  world.player.y = car.y;
+  world.player.angle = car.angle;
+  return car;
+}
+
+export function buildShot(name, seed) {
+  const world = createWorld(seed);
+  if (name === 'start') {
+    return { world, mode: 'title' };
   }
+  if (name === 'play') {
+    const car = putPlayerInCar(world, 'parked');
+    car.x = 660;
+    car.y = 660;
+    car.angle = 0;
+    world.player.x = 660;
+    world.player.y = 660;
+    world.player.angle = 0;
+    world.message = { text: 'Job 1: The Pickup — head to the docks', until: 9999 };
+    driveSteps(world, 100, { ...blankInput(), up: true });
+    return { world, mode: 'playing' };
+  }
+  if (name === 'chase') {
+    const car = putPlayerInCar(world, 'parked');
+    car.x = 820; // vertical road 5: drive south on the road, not through blocks
+    car.y = 500;
+    car.angle = Math.PI / 2;
+    world.player.x = 820;
+    world.player.y = 500;
+    world.player.angle = Math.PI / 2;
+    world.wanted.stars = 3;
+    world.wanted.heat = 100;
+    world.wanted.lastCrime = 0;
+    world.message = { text: 'The cops are on you!', until: 9999 };
+    driveSteps(world, 60, { ...blankInput(), up: true });
+    // Two police cars right on the player's tail.
+    for (let k = 0; k < 2; k++) {
+      const id = Math.max(0, ...world.cars.map((c) => c.id)) + 1;
+      world.cars.push({
+        id,
+        kind: 'police',
+        x: 820 - k * 60,
+        y: 500 - 90 - k * 40,
+        angle: Math.PI / 2,
+        speed: 320,
+        targetSpeed: 0,
+        color: '#20242c',
+        axis: 'v',
+        road: 0,
+        dir: 1,
+        lane: 1,
+        disabled: false,
+        ramCooldown: 0,
+      });
+    }
+    step(world, { ...blankInput(), up: true }, 1 / 60);
+    return { world, mode: 'playing' };
+  }
+  if (name === 'mission') {
+    world.missionIndex = 2;
+    world.missionStage = 'collect';
+    world.player.bagsCollected = 2;
+    world.bags[0].taken = true;
+    world.bags[1].taken = true;
+    const bag = world.bags[2];
+    world.player.x = bag.x - 40;
+    world.player.y = bag.y + 10;
+    world.player.angle = 0;
+    world.wanted.stars = 2;
+    world.wanted.heat = 100;
+    world.wanted.lastCrime = 0;
+    step(world, blankInput(), 1 / 60);
+    // Set the message after the step: stepping spawns police, which would
+    // overwrite it with their own "cops are on you" line.
+    world.message = { text: 'Cash bag 3/5', until: 9999 };
+    return { world, mode: 'playing' };
+  }
+  if (name === 'end') {
+    world.missionIndex = 3;
+    world.missionStage = 'done';
+    world.debt = 0;
+    world.player.money = CONFIG.DEBT_TOTAL;
+    world.won = true;
+    world.stats.missionsDone = 3;
+    world.stats.timePlayed = 742;
+    world.stats.carsStolen = 2;
+    world.stats.shotsFired = 18;
+    world.stats.hits = 11;
+    return { world, mode: 'won' };
+  }
+  return { world, mode: 'title' };
 }
+
+export { carById, PLACES };

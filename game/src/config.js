@@ -1,94 +1,111 @@
-// SOLMAR HEAT — tuning constants for the whole game.
-// One place holds every number that shapes how the city feels, so balancing
-// is a matter of editing this file, never hunting through the logic.
+// SOLMAR HEAT — tuning constants.
+// A sun-soaked coastal city, top-down. All distances in world pixels, all
+// times in seconds, all speeds in pixels per second.
 
-export const TILE = 48;
+export const CONFIG = {
+  // City layout: 9x9 blocks, roads between them, beach + water on the east.
+  COLS: 9,
+  ROWS: 9,
+  BLOCK: 120, // block side
+  ROAD: 40, // road width
+  PITCH: 160, // BLOCK + ROAD
+  WORLD_W: 1600, // city (1480) + beach (72) + water (48)
+  WORLD_H: 1480,
+  BEACH_X: 1480,
+  WATER_X: 1552,
 
-// City layout: a 9x9 grid of blocks separated by roads.
-export const GRID = 9;
-export const BLOCK = 176; // side of one city block, in pixels
-export const ROAD = 64; // width of one road, in pixels
-export const PITCH = BLOCK + ROAD; // distance between neighbouring road centres
-export const CITY = GRID * PITCH + ROAD; // roads area: 2224 px on a side
-export const BEACH_W = 170; // sand strip on the east edge
-export const WATER_X = CITY + BEACH_W; // water starts here
-export const WORLD_W = WATER_X + 130; // world width incl. water
-export const WORLD_H = CITY;
+  // Player on foot.
+  WALK_SPEED: 175,
+  RUN_SPEED: 265,
+  PLAYER_RADIUS: 11,
+  PLAYER_MAX_HEALTH: 100,
 
-// A road centre line, i = 0..9 (roads run along both edges of the grid).
-export const roadCentre = (i) => i * PITCH + ROAD / 2;
+  // Driving.
+  CAR_ACCEL: 430,
+  CAR_BRAKE: 700,
+  CAR_REVERSE_MAX: 190,
+  CAR_MAX_SPEED: 540,
+  CAR_TURN: 2.7, // radians per second at full steer
+  CAR_DRAG: 0.55, // per-second speed decay when coasting
+  CAR_RADIUS: 15,
 
-// Player on foot.
-export const WALK_SPEED = 175;
-export const RUN_SPEED = 275;
-export const PLAYER_R = 13;
-export const PLAYER_MAX_HEALTH = 100;
+  // Traffic + pedestrians.
+  TRAFFIC_COUNT: 14,
+  PED_COUNT: 26,
+  PARKED_COUNT: 6,
+  TRAFFIC_SPEED: 150,
+  PED_SPEED: 52,
 
-// Cars.
-export const CAR_MAX_SPEED = 560;
-export const CAR_MAX_REVERSE = 190;
-export const CAR_ACCEL = 540;
-export const CAR_BRAKE = 900;
-export const CAR_TURN = 2.7; // radians per second at full speed
-export const CAR_R = 18;
+  // Combat.
+  PUNCH_RANGE: 34,
+  PUNCH_DAMAGE: 34,
+  PUNCH_COOLDOWN: 0.38,
+  BULLET_SPEED: 760,
+  BULLET_RANGE: 520,
+  BULLET_DAMAGE: 34,
+  FIRE_COOLDOWN: 0.22,
+  START_AMMO: 24,
+  AMMO_PICKUP: 24,
+  HEALTH_PICKUP: 40,
 
-// Traffic and pedestrians.
-export const TRAFFIC_CARS = 14;
-export const PED_COUNT = 26;
-export const PARKED_CARS = 6;
-export const TRAFFIC_SPEED_MIN = 95;
-export const TRAFFIC_SPEED_MAX = 150;
+  // Wanted + police.
+  MAX_WANTED: 5,
+  MAX_POLICE: 4,
+  WANTED_DECAY_DELAY: 10, // seconds quiet before heat starts falling
+  WANTED_DECAY_RATE: 9, // heat points per second
+  POLICE_RAM_DAMAGE_FOOT: 20,
+  POLICE_RAM_DAMAGE_CAR: 6,
+  BUST_HOLD_TIME: 1.2, // seconds a cop must stay close on foot to bust you
 
-// Combat.
-export const PUNCH_RANGE = 58;
-export const PUNCH_DAMAGE = 30;
-export const PUNCH_COOLDOWN = 0.38;
-export const PISTOL_DAMAGE = 34;
-export const PISTOL_RANGE = 340;
-export const PISTOL_COOLDOWN = 0.22;
-export const START_AMMO = 24;
-export const AMMO_PICKUP = 12;
-export const MEDKIT_HEAL = 25;
+  // Story: Jax Moreno owes Sal $50,000.
+  DEBT_TOTAL: 50000,
+  MISSION_PAYOUTS: [8000, 14000, 28000],
+  CASH_BAG_COUNT: 5,
 
-// Wanted level.
-export const WANTED_MAX = 5;
-export const WANTED_DECAY_QUIET = 10; // seconds without crime before decay starts
-export const WANTED_DECAY_STEP = 6; // seconds per star lost while laying low
-export const POLICE_MAX = 4;
-export const POLICE_SPEED = 600;
-export const POLICE_HP = 120;
-export const POLICE_RAM_DAMAGE = 14;
+  // Camera + minimap.
+  VIEW_W: 1280,
+  VIEW_H: 720,
+  MINIMAP_SIZE: 168,
 
-// Story: Jax Moreno owes Sal $50,000.
-export const DEBT_TOTAL = 50000;
-export const MISSION_REWARDS = [8000, 14000, 28000];
-export const MISSION_NAMES = ['The Pickup', 'Hot Wheels', 'The Big Score'];
-export const CASH_BAGS = 5;
-
-// Pickups scattered around the city.
-export const AMMO_BOXES = 6;
-export const MEDKITS = 4;
-
-// Save slot.
-export const SAVE_KEY = 'solmar-heat-save-v1';
-
-// Palette.
-export const COLORS = {
-  water: '#1d6f8e',
-  waterDeep: '#155a75',
-  sand: '#e8cf96',
-  grass: '#5da24a',
-  parkGrass: '#4c8f3e',
-  road: '#3a3a40',
-  roadEdge: '#2c2c31',
-  lane: '#e8d44d',
-  sidewalk: '#9a9a92',
-  buildingRoof: ['#b0563a', '#7a6a8f', '#4a7a9e', '#9e8a4a', '#8f4a5e', '#5e8f6a'],
-  buildingEdge: '#2e2a26',
-  dockWood: '#8a6a42',
-  player: '#f2c14e',
-  playerJacket: '#d94f3d',
-  police: '#2b4fd8',
-  policeLight: '#ff3b30',
-  comet: '#e83e8c',
+  SAVE_KEY: 'solmar-heat-save-v1',
 };
+
+// Road centre line for road index i (0..9) in either axis.
+export function roadCenter(i) {
+  return i * CONFIG.PITCH + CONFIG.ROAD / 2;
+}
+
+// Centre of block (col, row), both 0..8.
+export function blockCenter(col, row) {
+  return {
+    x: CONFIG.ROAD + col * CONFIG.PITCH + CONFIG.BLOCK / 2,
+    y: CONFIG.ROAD + row * CONFIG.PITCH + CONFIG.BLOCK / 2,
+  };
+}
+
+// Is this point on a road (either a vertical or a horizontal road)?
+export function onRoad(x, y) {
+  const mx = ((x % CONFIG.PITCH) + CONFIG.PITCH) % CONFIG.PITCH;
+  const my = ((y % CONFIG.PITCH) + CONFIG.PITCH) % CONFIG.PITCH;
+  return mx < CONFIG.ROAD || my < CONFIG.ROAD;
+}
+
+export function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+export function dist(ax, ay, bx, by) {
+  return Math.hypot(ax - bx, ay - by);
+}
+
+export function angleTo(ax, ay, bx, by) {
+  return Math.atan2(by - ay, bx - ax);
+}
+
+// Shortest signed turn from angle a toward angle b.
+export function angleDelta(a, b) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
