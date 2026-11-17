@@ -1,111 +1,108 @@
-// SOLMAR HEAT — tuning constants.
-// A sun-soaked coastal city, top-down. All distances in world pixels, all
-// times in seconds, all speeds in pixels per second.
+// SOLMAR HEAT — tuning constants. One job: every number the game balances on.
+export const CFG = {
+  // City grid: 9x9 blocks, roads between them.
+  GRID: 9,
+  BLOCK: 180,
+  ROAD: 70,
+  PITCH: 250, // BLOCK + ROAD
+  get SIZE() { return this.GRID * this.PITCH + this.ROAD; }, // 2320
 
-export const CONFIG = {
-  // City layout: 9x9 blocks, roads between them, beach + water on the east.
-  COLS: 9,
-  ROWS: 9,
-  BLOCK: 120, // block side
-  ROAD: 40, // road width
-  PITCH: 160, // BLOCK + ROAD
-  WORLD_W: 1600, // city (1480) + beach (72) + water (48)
-  WORLD_H: 1480,
-  BEACH_X: 1480,
-  WATER_X: 1552,
-
-  // Player on foot.
+  // Player on foot
   WALK_SPEED: 175,
   RUN_SPEED: 265,
-  PLAYER_RADIUS: 11,
-  PLAYER_MAX_HEALTH: 100,
+  PLAYER_RADIUS: 12,
 
-  // Driving.
-  CAR_ACCEL: 430,
-  CAR_BRAKE: 700,
-  CAR_REVERSE_MAX: 190,
-  CAR_MAX_SPEED: 540,
-  CAR_TURN: 2.7, // radians per second at full steer
-  CAR_DRAG: 0.55, // per-second speed decay when coasting
-  CAR_RADIUS: 15,
+  // Driving
+  CAR_LENGTH: 48,
+  CAR_WIDTH: 24,
+  CAR_ACCEL: 300,
+  CAR_MAX_SPEED: 430,
+  CAR_REVERSE_MAX: 170,
+  CAR_BRAKE: 520,
+  CAR_STEER: 2.6,
+  CAR_DRAG: 0.55,
 
-  // Traffic + pedestrians.
-  TRAFFIC_COUNT: 14,
-  PED_COUNT: 26,
-  PARKED_COUNT: 6,
-  TRAFFIC_SPEED: 150,
-  PED_SPEED: 52,
+  // Traffic and crowd
+  TRAFFIC_CARS: 14,
+  PARKED_CARS: 6,
+  PEDESTRIANS: 26,
+  TRAFFIC_SPEED: 120,
+  PED_SPEED: 55,
 
-  // Combat.
-  PUNCH_RANGE: 34,
+  // Combat
+  PUNCH_RANGE: 46,
   PUNCH_DAMAGE: 34,
-  PUNCH_COOLDOWN: 0.38,
-  BULLET_SPEED: 760,
-  BULLET_RANGE: 520,
-  BULLET_DAMAGE: 34,
-  FIRE_COOLDOWN: 0.22,
-  START_AMMO: 24,
+  PISTOL_RANGE: 430,
+  PISTOL_DAMAGE: 55,
+  PISTOL_AMMO_START: 36,
   AMMO_PICKUP: 24,
-  HEALTH_PICKUP: 40,
 
-  // Wanted + police.
-  MAX_WANTED: 5,
-  MAX_POLICE: 4,
-  WANTED_DECAY_DELAY: 10, // seconds quiet before heat starts falling
-  WANTED_DECAY_RATE: 9, // heat points per second
-  POLICE_RAM_DAMAGE_FOOT: 20,
-  POLICE_RAM_DAMAGE_CAR: 6,
-  BUST_HOLD_TIME: 1.2, // seconds a cop must stay close on foot to bust you
+  // Health and wanted
+  PLAYER_HEALTH: 100,
+  WANTED_MAX: 5,
+  WANTED_DECAY_SECONDS: 18,
+  POLICE_MAX: 4,
+  POLICE_SPEED: 455,
+  BUSTED_HOLD_SECONDS: 1.2,
 
   // Story: Jax Moreno owes Sal $50,000.
   DEBT_TOTAL: 50000,
-  MISSION_PAYOUTS: [8000, 14000, 28000],
-  CASH_BAG_COUNT: 5,
+  MISSION_PAY: [8000, 14000, 28000],
+  START_MONEY: 250,
 
-  // Camera + minimap.
-  VIEW_W: 1280,
-  VIEW_H: 720,
-  MINIMAP_SIZE: 168,
-
-  SAVE_KEY: 'solmar-heat-save-v1',
+  // Colours — sun-soaked coastal city palette.
+  COLORS: {
+    grass: '#7fae62',
+    park: '#69a24f',
+    sidewalk: '#d8cbb2',
+    road: '#3d4149',
+    roadLine: '#e8d44f',
+    sand: '#e8d29a',
+    water: '#2f8fb5',
+    waterDeep: '#1f6f96',
+    buildingRoof: ['#e07856', '#e8a54b', '#5ba8a0', '#c96f8e', '#8a7fc0', '#d96b4f'],
+    buildingWall: ['#f2e3c8', '#e8d3ae', '#dfe8e2', '#f0d0c0'],
+  },
 };
 
-// Road centre line for road index i (0..9) in either axis.
-export function roadCenter(i) {
-  return i * CONFIG.PITCH + CONFIG.ROAD / 2;
-}
+// Mission marker spots. Every one sits on a road, a sidewalk or the sand —
+// never inside a building and never in the water — so the player can reach it.
+export const SPOTS = {
+  docksPackage: { x: 140, y: 2190, label: 'Package at the docks' },
+  pawnShop: { x: 660, y: 1785, label: 'Pawn shop' },
+  cometGt: { x: 1200, y: 785, label: 'Comet GT' },
+  chopShop: { x: 1600, y: 1035, label: 'Chop shop' },
+  cashBags: [
+    { x: 285, y: 535 },
+    { x: 1035, y: 285 },
+    { x: 1785, y: 1285 },
+    { x: 535, y: 2035 },
+    { x: 1535, y: 785 },
+  ],
+  hideout: { x: 1100, y: 1035, label: 'Hideout' },
+  hospital: { x: 410, y: 285, label: 'Clinic' },
+};
 
-// Centre of block (col, row), both 0..8.
-export function blockCenter(col, row) {
-  return {
-    x: CONFIG.ROAD + col * CONFIG.PITCH + CONFIG.BLOCK / 2,
-    y: CONFIG.ROAD + row * CONFIG.PITCH + CONFIG.BLOCK / 2,
-  };
-}
-
-// Is this point on a road (either a vertical or a horizontal road)?
-export function onRoad(x, y) {
-  const mx = ((x % CONFIG.PITCH) + CONFIG.PITCH) % CONFIG.PITCH;
-  const my = ((y % CONFIG.PITCH) + CONFIG.PITCH) % CONFIG.PITCH;
-  return mx < CONFIG.ROAD || my < CONFIG.ROAD;
-}
-
-export function clamp(v, lo, hi) {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-export function dist(ax, ay, bx, by) {
-  return Math.hypot(ax - bx, ay - by);
-}
-
-export function angleTo(ax, ay, bx, by) {
-  return Math.atan2(by - ay, bx - ax);
-}
-
-// Shortest signed turn from angle a toward angle b.
-export function angleDelta(a, b) {
-  let d = b - a;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
+export const MISSIONS = [
+  {
+    id: 1,
+    name: 'The Pickup',
+    pay: 8000,
+    briefing: 'Sal wants his package from the docks. Grab it, take it to the pawn shop. No detours.',
+    objective: (w) => (w.missionStage === 0 ? 'Pick up the package at the docks' : 'Deliver the package to the pawn shop'),
+  },
+  {
+    id: 2,
+    name: 'Hot Wheels',
+    pay: 14000,
+    briefing: 'A Comet GT is parked downtown. Steal it and bring it to the chop shop. Try not to scratch it.',
+    objective: () => 'Steal the Comet GT and deliver it to the chop shop',
+  },
+  {
+    id: 3,
+    name: 'The Big Score',
+    pay: 28000,
+    briefing: 'Five cash bags stashed around Solmar. Collect them all, then get back to the hideout.',
+    objective: (w) => `Collect the cash bags (${w.bagsCollected}/5), then return to the hideout`,
+  },
+];

@@ -1,9 +1,8 @@
-// SOLMAR HEAT — small seeded RNG (mulberry32) plus helpers.
-// Everything random in the game flows from one seed so `?seed=` replays the
-// same city, traffic and pedestrians every time.
-
-export function makeRng(seed) {
-  let a = (seed >>> 0) || 0x9e3779b9;
+// SOLMAR HEAT — seeded random numbers. One job: deterministic randomness.
+// Mulberry32: small, fast, and fully reproducible from one integer seed, so
+// `?seed=` rebuilds the exact same city every time.
+export function mulberry32(seed) {
+  let a = seed >>> 0;
   return function next() {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
@@ -13,36 +12,25 @@ export function makeRng(seed) {
   };
 }
 
-export function rngRange(rng, lo, hi) {
-  return lo + rng() * (hi - lo);
-}
-
-export function rngInt(rng, lo, hi) {
-  // Integer in [lo, hi).
-  return lo + Math.floor(rng() * (hi - lo));
-}
-
-export function rngPick(rng, arr) {
-  return arr[Math.floor(rng() * arr.length)];
-}
-
-// Fisher-Yates shuffle, in place, driven by the seeded rng.
-export function rngShuffle(rng, arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    const tmp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = tmp;
-  }
-  return arr;
-}
-
-// A stable 32-bit hash of a short string, for deriving sub-seeds.
-export function hashSeed(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
+export function makeRng(seed) {
+  const next = mulberry32(seed);
+  return {
+    next,
+    // Integer in [min, max).
+    int(min, max) {
+      return min + Math.floor(next() * (max - min));
+    },
+    // Float in [min, max).
+    range(min, max) {
+      return min + next() * (max - min);
+    },
+    // Pick one element.
+    pick(list) {
+      return list[Math.floor(next() * list.length)];
+    },
+    // True with probability p.
+    chance(p) {
+      return next() < p;
+    },
+  };
 }

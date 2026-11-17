@@ -1,10 +1,8 @@
-// SOLMAR HEAT — entrypoint for gta6-01 (Node 22, standard library only).
-// Hands the game in: copies game/ and screenshots/ from beside this file
-// into the output directory and writes /output/dossier.json with the
-// vendored make.fun library, then runs a few sanity gates of its own so a
-// broken entry fails loudly here instead of at the grader.
-//
-// Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
+// SOLMAR HEAT — gta6-01 entry program (Node 22, standard library only).
+// It copies game/ and screenshots/ from beside this file to /output and
+// writes /output/dossier.json with the vendored make.fun library, after its
+// own gate checks refuse anything the scorer would refuse.
+// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
 import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -14,39 +12,52 @@ import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-const gameDir = join(here, 'game');
-const shotsDir = join(here, 'screenshots');
 
-// Gate 1: the game must exist and have an index page to open.
-if (!existsSync(join(gameDir, 'index.html'))) {
-  throw new Error('gate: game/index.html is missing');
+// --- Own gate validation (mirrors the scorer's reference/gate.json) ---
+function fail(message) {
+  throw new Error(`SOLMAR HEAT gate: ${message}`);
 }
 
-// Gate 2: at most four screenshots, each a JPEG under the 256 KiB cap.
-const shots = existsSync(shotsDir) ? readdirSync(shotsDir).sort() : [];
-if (shots.length > 4) throw new Error(`gate: ${shots.length} screenshots, at most 4 allowed`);
-for (const name of shots) {
-  const size = statSync(join(shotsDir, name)).size;
-  if (size > 262144) throw new Error(`gate: screenshots/${name} is ${size} bytes, over 256 KiB`);
-}
-
-// Gate 3: the game tree stays inside the scorer's caps.
-let gameFiles = 0;
-let gameBytes = 0;
-(function walk(dir) {
+function walkGame(dir, rel = '') {
+  let entries = 0;
+  let bytes = 0;
   for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    const st = statSync(p);
-    if (st.isDirectory()) walk(p);
+    const path = join(dir, name);
+    const relPath = rel ? `${rel}/${name}` : name;
+    const st = statSync(path);
+    if (!st.isFile() && !st.isDirectory()) fail(`game/${relPath} is not a plain file or directory`);
+    entries++;
+    if (Buffer.byteLength(relPath, 'utf8') > 1000) fail(`game/${relPath} path is over 1000 bytes`);
+    if (st.isFile()) bytes += st.size;
     else {
-      gameFiles += 1;
-      gameBytes += st.size;
+      const sub = walkGame(path, relPath);
+      entries += sub.entries;
+      bytes += sub.bytes;
     }
   }
-})(gameDir);
-if (gameFiles > 993) throw new Error(`gate: game/ has ${gameFiles} files, cap is 993`);
-if (gameBytes > 50331648) throw new Error(`gate: game/ is ${gameBytes} bytes, cap is 48 MiB`);
+  return { entries, bytes };
+}
 
+const gameDir = join(here, 'game');
+if (!existsSync(join(gameDir, 'index.html'))) fail('game/index.html is missing');
+if (statSync(join(gameDir, 'index.html')).size > 1024 * 1024) fail('game/index.html is over 1 MiB');
+const gameStats = walkGame(gameDir);
+if (gameStats.entries > 993) fail(`game/ holds ${gameStats.entries} entries, over the 993 cap`);
+if (gameStats.bytes > 48 * 1024 * 1024) fail(`game/ holds ${gameStats.bytes} bytes, over the 48 MiB cap`);
+
+const shotsDir = join(here, 'screenshots');
+const shots = existsSync(shotsDir)
+  ? readdirSync(shotsDir).filter((n) => !n.startsWith('.'))
+  : [];
+if (shots.length < 3 || shots.length > 4) fail(`screenshots/ holds ${shots.length} images, need 3 or 4`);
+for (const name of shots) {
+  if (!/^[A-Za-z0-9._-]+$/.test(name) || name.startsWith('-')) fail(`screenshot name ${name} is not allowed`);
+  const size = statSync(join(shotsDir, name)).size;
+  if (size > 256 * 1024) fail(`screenshot ${name} is ${size} bytes, over the 256 KiB cap`);
+  if (!/\.(png|jpe?g)$/i.test(name)) fail(`screenshot ${name} is not a PNG or JPEG`);
+}
+
+// --- Hand the entry in ---
 mkdirSync(out, { recursive: true });
 cpSync(gameDir, join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
@@ -63,6 +74,4 @@ writeFileSync(
   }),
 );
 
-console.log(
-  `SOLMAR HEAT handed in: ${gameFiles} game files (${gameBytes} bytes), ${shots.length} screenshots -> ${out}`,
-);
+console.log(`SOLMAR HEAT handed in: ${gameStats.entries} game entries, ${shots.length} screenshots, dossier written to ${join(out, 'dossier.json')}`);

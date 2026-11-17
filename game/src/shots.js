@@ -1,114 +1,88 @@
-// SOLMAR HEAT — frozen screenshot scenes for `?shot=`.
-// Each shot builds a deterministic world from the seed and arranges it so
-// one rendered frame tells the story: title, driving, a police chase, a
-// mission moment, the victory screen.
+// SOLMAR HEAT — screenshot scenes. One job: freeze the game into the exact
+// states `?shot=` asks for, so screenshots show the real game at its best.
+import { CFG, SPOTS } from './config.js';
+import { createWorld, stepWorld } from './world.js';
 
-import { createWorld, step, carById, PLACES } from './world.js';
-import { blankInput } from './input.js';
-import { CONFIG } from './config.js';
-
-function driveSteps(world, n, input) {
-  const inp = input || { ...blankInput(), up: true };
-  for (let i = 0; i < n; i++) step(world, inp, 1 / 60);
+// A quiet input object: nothing pressed.
+function idleInput() {
+  return { up: false, down: false, left: false, right: false, run: false, act: false, punch: false, shoot: false, aimX: 0, aimY: 0 };
 }
 
-// Put the player in a car and roll it downtown for a few seconds.
-function putPlayerInCar(world, carKind) {
-  const car = world.cars.find((c) => c.kind === carKind) || world.cars[0];
-  car.speed = 0;
-  world.player.carId = car.id;
-  world.player.x = car.x;
-  world.player.y = car.y;
-  world.player.angle = car.angle;
-  return car;
+const hooks = { sfx: () => {} };
+
+// Put the player in a car and drive it for a bit, so the scene has motion.
+function driveFor(w, seconds, steer) {
+  const input = idleInput();
+  input.up = true;
+  if (steer === 'left') input.left = true;
+  if (steer === 'right') input.right = true;
+  for (let i = 0; i < Math.floor(seconds * 60); i++) stepWorld(w, input, 1 / 60, hooks);
 }
 
-export function buildShot(name, seed) {
-  const world = createWorld(seed);
+// Every shot starts from the same seed so the city is identical each time.
+export function setupShot(name, seed) {
+  const w = createWorld(seed);
+  const input = idleInput();
   if (name === 'start') {
-    return { world, mode: 'title' };
+    w.frozen = true;
+    return { world: w, screen: 'title' };
   }
   if (name === 'play') {
-    const car = putPlayerInCar(world, 'parked');
-    car.x = 660;
-    car.y = 660;
-    car.angle = 0;
-    world.player.x = 660;
-    world.player.y = 660;
-    world.player.angle = 0;
-    world.message = { text: 'Job 1: The Pickup — head to the docks', until: 9999 };
-    driveSteps(world, 100, { ...blankInput(), up: true });
-    return { world, mode: 'playing' };
+    // Downtown, behind the wheel, mission 1 live on the HUD.
+    const car = w.cars.find((c) => c.kind === 'parked');
+    w.player.x = car.x - 40;
+    w.player.y = car.y;
+    input.act = true;
+    stepWorld(w, input, 1 / 60, hooks);
+    driveFor(w, 1.6, 'right');
+    w.frozen = true;
+    return { world: w, screen: 'play' };
   }
   if (name === 'chase') {
-    const car = putPlayerInCar(world, 'parked');
-    car.x = 820; // vertical road 5: drive south on the road, not through blocks
-    car.y = 500;
-    car.angle = Math.PI / 2;
-    world.player.x = 820;
-    world.player.y = 500;
-    world.player.angle = Math.PI / 2;
-    world.wanted.stars = 3;
-    world.wanted.heat = 100;
-    world.wanted.lastCrime = 0;
-    world.message = { text: 'The cops are on you!', until: 9999 };
-    driveSteps(world, 60, { ...blankInput(), up: true });
-    // Two police cars right on the player's tail.
-    for (let k = 0; k < 2; k++) {
-      const id = Math.max(0, ...world.cars.map((c) => c.id)) + 1;
-      world.cars.push({
-        id,
-        kind: 'police',
-        x: 820 - k * 60,
-        y: 500 - 90 - k * 40,
-        angle: Math.PI / 2,
-        speed: 320,
-        targetSpeed: 0,
-        color: '#20242c',
-        axis: 'v',
-        road: 0,
-        dir: 1,
-        lane: 1,
-        disabled: false,
-        ramCooldown: 0,
-      });
+    // Three stars, two cruisers on the tail, mid-pursuit.
+    const car = w.cars.find((c) => c.kind === 'parked');
+    w.player.x = car.x - 40;
+    w.player.y = car.y;
+    input.act = true;
+    stepWorld(w, input, 1 / 60, hooks);
+    w.wanted = 3;
+    w.message = 'The cops are on you!';
+    w.messageTimer = 99;
+    for (let i = 0; i < 4 * 60; i++) {
+      const drive = idleInput();
+      drive.up = true;
+      drive.right = i % 120 < 60;
+      stepWorld(w, drive, 1 / 60, hooks);
     }
-    step(world, { ...blankInput(), up: true }, 1 / 60);
-    return { world, mode: 'playing' };
+    w.frozen = true;
+    return { world: w, screen: 'play' };
   }
   if (name === 'mission') {
-    world.missionIndex = 2;
-    world.missionStage = 'collect';
-    world.player.bagsCollected = 2;
-    world.bags[0].taken = true;
-    world.bags[1].taken = true;
-    const bag = world.bags[2];
-    world.player.x = bag.x - 40;
-    world.player.y = bag.y + 10;
-    world.player.angle = 0;
-    world.wanted.stars = 2;
-    world.wanted.heat = 100;
-    world.wanted.lastCrime = 0;
-    step(world, blankInput(), 1 / 60);
-    // Set the message after the step: stepping spawns police, which would
-    // overwrite it with their own "cops are on you" line.
-    world.message = { text: 'Cash bag 3/5', until: 9999 };
-    return { world, mode: 'playing' };
+    // On foot at the third cash bag, two stars, mission 3 in progress.
+    w.mission = 3;
+    w.bags[0].taken = true;
+    w.bags[1].taken = true;
+    w.bagsCollected = 2;
+    w.wanted = 2;
+    w.player.x = SPOTS.cashBags[2].x - 60;
+    w.player.y = SPOTS.cashBags[2].y + 30;
+    w.player.angle = Math.atan2(SPOTS.cashBags[2].y - w.player.y, SPOTS.cashBags[2].x - w.player.x);
+    w.message = 'Cash bag 3/5 — grab it and keep moving.';
+    w.messageTimer = 99;
+    w.frozen = true;
+    return { world: w, screen: 'play' };
   }
   if (name === 'end') {
-    world.missionIndex = 3;
-    world.missionStage = 'done';
-    world.debt = 0;
-    world.player.money = CONFIG.DEBT_TOTAL;
-    world.won = true;
-    world.stats.missionsDone = 3;
-    world.stats.timePlayed = 742;
-    world.stats.carsStolen = 2;
-    world.stats.shotsFired = 18;
-    world.stats.hits = 11;
-    return { world, mode: 'won' };
+    // Victory screen after the debt is paid.
+    w.debtPaid = CFG.DEBT_TOTAL;
+    w.player.money = 2850 + CFG.DEBT_TOTAL;
+    w.stats.missionsDone = 3;
+    w.stats.carsStolen = 7;
+    w.time = 742;
+    w.state = 'won';
+    w.frozen = true;
+    return { world: w, screen: 'end' };
   }
-  return { world, mode: 'title' };
+  w.frozen = true;
+  return { world: w, screen: 'title' };
 }
-
-export { carById, PLACES };
